@@ -1,0 +1,47 @@
+openapi: "3.0.0"
+info:
+  description: "Public documentation for payment & subscription System"
+  version: "1.0.0"
+  title: "Payment & Subscription API"
+  contact:
+    email: "ourteam@subs.com"
+servers:
+  - url: "https://api.payments.com"
+paths:
+  /users:
+    get:
+      summary: "Return details about all users"
+      operationId: "getUsers"
+      responses:
+        '200':
+          description: "successful operation"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        '400':
+          description: "bad request"
+        '404':
+          description: "users not found"
+components:
+  schemas:
+    User:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+        username:
+          type: "string"
+        subscriptionStatus:
+          type: "boolean"
+        subscriptionType:
+          type: "string"
+        email:
+          type: "string"
+    ApiResponse:
+      type: "object"
+      properties:
+        code:
+          type: "integer"
+          format: "int32"
