@@ -3,9 +3,11 @@ package purchase
 import (
 	"coffeeco/internal"
 	payment "coffeeco/internal/Payment"
+	"coffeeco/internal/loyalty"
 	"coffeeco/internal/store"
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/Rhymond/go-money"
@@ -47,13 +49,40 @@ type CardChargeService interface {
 	ChargeCard(ctx context.Context, amount money.Money, cardToken string) error
 }
 
+type StoreService interface {
+	GetStoreSpecificDiscount(ctx context.Context, storeID uuid.UUID) (float32, error)
+}
+
 type Service struct {
 	cardService  CardChargeService
 	purchaseRepo Repository
+	storeService StoreService
 }
 
-func (s Service) CompletePurchase(ctx context.Context, purchase *Purchase) error {
+func (s *Service) calculateStoreSpecific(ctx context.Context,
+	storeID uuid.UUID, purchase *Purchase) error {
+
+	discount, err := s.storeService.GetStoreSpecificDiscount(ctx, storeID)
+	if err != nil && err != store.ErrNoDiscount {
+		return fmt.Errorf("failed to get discount: %w", err)
+	}
+
+	purchasePrice := purchase.total
+	if discount > 0 {
+		purchasePrice = *purchasePrice.Multiply(int64(100 - discount))
+	}
+
+	return nil
+
+}
+
+func (s Service) CompletePurchase(ctx context.Context, storeID uuid.UUID,
+	purchase *Purchase, coffeeBuxCard *loyalty.CoffeeBux) error {
 	if err := purchase.validateAndEnrich(); err != nil {
+		return err
+	}
+
+	if err := s.calculateStoreSpecific(ctx, storeID, purchase); err != nil {
 		return err
 	}
 
@@ -64,12 +93,20 @@ func (s Service) CompletePurchase(ctx context.Context, purchase *Purchase) error
 		}
 	case payment.MEANS_CASH:
 		// TODO: for the reader to add :)
+	case payment.MEANS_COFFEEBUX:
+		if err := coffeeBuxCard.Pay(ctx, purchase.ProductsToPurchase); err != nil {
+			return fmt.Errorf("failed to charge loyalty card: %w", err)
+		}
 	default:
 		return errors.New("unknown payment type")
 	}
 
 	if err := s.purchaseRepo.Store(ctx, *purchase); err != nil {
 		return errors.New("failed to store purchase")
+	}
+
+	if coffeeBuxCard != nil {
+		coffeeBuxCard.AddStamp()
 	}
 
 	return nil
